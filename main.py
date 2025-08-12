@@ -14,10 +14,10 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# 로컬 모듈 import
-from database import init_db
+# Local module imports
 from api.jobs import router as jobs_router
 from schemas import HealthResponse
+from services.face_queue import face_queue
 
 # 환경 변수 로드
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
@@ -104,30 +104,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 시작 이벤트
+# Startup event
 @app.on_event("startup")
-def startup_event():
-    """서버 시작 시 초기화"""
-    # 디렉토리 생성
+async def startup_event():
+    """Initialize on server start"""
+    # Create directories
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
-    # 데이터베이스 초기화
-    init_db()
+    # Start face queue worker
+    await face_queue.start()
     
     logger.info("Server started successfully")
 
 
-# 종료 이벤트
+# Shutdown event
 @app.on_event("shutdown")
-def shutdown_event():
-    """서버 종료 시 정리"""
-    from background.task_runner import get_task_runner
+async def shutdown_event():
+    """Cleanup on server shutdown"""
+    # Stop face queue worker
+    await face_queue.stop()
     
-    # 백그라운드 태스크 정리
-    task_runner = get_task_runner()
-    logger.info(f"Shutting down with {task_runner.get_active_task_count()} active tasks")
-    task_runner.shutdown(wait=False)  # 즉시 종료
+    # Shutdown GPT processor
+    from services.gpt_processor import gpt_processor
+    gpt_processor.shutdown()
     
     logger.info("Server shutdown completed")
 
@@ -143,19 +143,19 @@ def root():
     return {"message": "AI Image Processing Server (Refactored)", "version": "2.0.0"}
 
 
-@app.get("/health", response_model=HealthResponse, summary="헬스 체크")
+@app.get("/health", response_model=HealthResponse, summary="Health check")
 def health_check():
-    """헬스체크 엔드포인트"""
-    from background.task_runner import get_task_runner
+    """Health check endpoint"""
+    from services.job_manager import job_manager
     
-    task_runner = get_task_runner()
+    queue_status = job_manager.get_queue_status()
     
     return HealthResponse(
         status="healthy",
         upload_dir=str(UPLOAD_DIR),
         jobs_dir=str(JOBS_DIR),
         mode_support=["gpt_only", "face_only", "both"],
-        active_tasks=task_runner.get_active_task_count()  # 추가 정보
+        active_tasks=queue_status.get("gpt_processing", 0) + queue_status.get("face_processing", 0)
     )
 
 

@@ -1,9 +1,11 @@
 """
-작업 관련 API 엔드포인트
+Job API endpoints
 """
 
-import json
+import asyncio
 import logging
+from datetime import datetime
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import JSONResponse
 
@@ -12,14 +14,10 @@ from schemas import (
     CreateGPTJob, CreateFaceJob, CreateJob,
     JobCreateResponse, JobResponse
 )
-from database import create_job as db_create_job, get_job as db_get_job, now_utc
-from services.job_service import (
-    create_image_job, create_gpt_job, create_face_job, create_full_job,
-    get_job_response, process_image_with_webhook
-)
-from pipelines import gpt_only_pipeline, face_only_pipeline, full_pipeline
-from background.task_runner import run_in_background
-from database import set_status, record_event
+from services.job_manager import job_manager, JobStatus
+from services.image_service import image_service
+from services.face_queue import face_queue
+from utils import to_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +25,15 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.post("", status_code=201,
-         summary="이미지 처리 작업 (새로운 API)",
-         description="Person ID 기반 이미지 처리 작업을 생성합니다.",
+         summary="Image processing job (new API)",
+         description="Create image processing job based on Person IDs",
          response_model=ImageJobResponse,
          responses={
              400: {"model": ErrorResponse, "description": "Bad Request"},
              404: {"model": ErrorResponse, "description": "Not Found"}
          })
 async def create_new_job(payload: CreateImageJob = Body(...)):
-    """새로운 형식의 이미지 처리 작업"""
+    """New format image processing job"""
     logger.info(f"Creating image job with person_ids: {payload.person_ids}")
     
     # Validation
@@ -75,140 +73,191 @@ async def create_new_job(payload: CreateImageJob = Body(...)):
             }
         )
     
-    # 작업 생성
-    job, prompt = create_image_job(payload)
-    db_create_job(job)
+    # Create job
+    job_id = job_manager.create_job("full")
     
-    # 백그라운드에서 실행 (블로킹 없음!)
-    run_in_background(
-        process_image_with_webhook(
-            job.id,
+    # Start processing
+    asyncio.create_task(
+        image_service.process_full_workflow(
+            job_id,
             payload.image_url,
-            prompt,
-            payload.person_ids
+            payload.person_ids,
+            payload.processing_options.dict()
         )
     )
     
-    # 즉시 응답
+    # Return immediate response
     return ImageJobResponse(
         data={
-            "job_id": job.id,
+            "job_id": job_id,
             "status": "queued",
-            "created_at": now_utc().isoformat()
+            "created_at": datetime.now().isoformat()
         }
     )
 
 
 @router.post("/gpt-edit", status_code=201,
-         summary="GPT 이미지 편집 작업",
-         description="OpenAI GPT를 사용한 이미지 편집만 수행합니다.",
+         summary="GPT image editing job",
+         description="Image editing using OpenAI GPT only",
          response_model=JobCreateResponse)
 async def create_gpt_only_job(payload: CreateGPTJob = Body(...)):
-    """GPT 편집 전용 엔드포인트"""
-    job = create_gpt_job(payload)
-    db_create_job(job)
+    """GPT editing only endpoint"""
+    job_id = job_manager.create_job("gpt_only")
     
-    # 마스크 파라미터 처리
-    use_face_mask = getattr(payload, 'use_face_mask', False)
-    mask_feather_pixels = getattr(payload, 'mask_feather_pixels', 12)
-    face_expand_ratio = getattr(payload, 'face_expand_ratio', 0.3)
-    
-    # 백그라운드에서 실행
-    run_in_background(
-        gpt_only_pipeline(
-            job.id,
+    # Start GPT processing
+    asyncio.create_task(
+        image_service.process_gpt_only(
+            job_id,
             payload.input_image_url,
-            payload.prompt,
-            payload.exif_strip,
-            use_face_mask,
-            mask_feather_pixels,
-            face_expand_ratio,
-            set_status,
-            record_event
+            payload.prompt
         )
     )
     
     return JobCreateResponse(
-        job_id=job.id,
+        job_id=job_id,
         mode="gpt_only",
         status="queued",
         message="GPT image editing job created successfully",
         links={
-            "self": f"/jobs/{job.id}",
-            "artifacts": f"/media/jobs/{job.id}/"
+            "self": f"/jobs/{job_id}",
+            "artifacts": f"/media/jobs/{job_id}/"
         }
     )
 
 
 @router.post("/face-swap", status_code=201,
-         summary="얼굴 교체 작업",
-         description="FaceFusion을 사용한 얼굴 교체만 수행합니다.",
+         summary="Face swap job",
+         description="Face swap using FaceFusion only",
          response_model=JobCreateResponse)
 async def create_face_only_job(payload: CreateFaceJob = Body(...)):
-    """FaceFusion 얼굴 교체 전용 엔드포인트"""
-    job = create_face_job(payload)
-    db_create_job(job)
+    """FaceFusion face swap only endpoint"""
+    job_id = job_manager.create_job("face_only")
     
-    # 백그라운드에서 실행
-    run_in_background(
-        face_only_pipeline(
-            job.id,
+    # Prepare face URLs
+    face_urls = []
+    for face_ref in payload.faces:
+        if hasattr(face_ref, 'url'):
+            face_urls.append(face_ref.url)
+        elif isinstance(face_ref, str):
+            face_urls.append(face_ref)
+    
+    # Start face processing
+    asyncio.create_task(
+        image_service.process_face_only(
+            job_id,
             payload.input_image_url,
-            payload.faces,
-            payload.mapping,
-            payload.top1_only,
-            payload.threshold,
-            payload.exif_strip,
-            set_status,
-            record_event
+            face_urls
         )
     )
     
     return JobCreateResponse(
-        job_id=job.id,
+        job_id=job_id,
         mode="face_only",
         status="queued",
         message="Face swap job created successfully",
         links={
-            "self": f"/jobs/{job.id}",
-            "artifacts": f"/media/jobs/{job.id}/"
+            "self": f"/jobs/{job_id}",
+            "artifacts": f"/media/jobs/{job_id}/"
         }
     )
 
 
 @router.post("/legacy", status_code=201,
-         summary="통합 작업 생성 (GPT + FaceFusion)",
-         description="AI 이미지 편집과 얼굴 교체를 모두 수행합니다.",
+         summary="Integrated job creation (GPT + FaceFusion)",
+         description="Perform both AI image editing and face swap",
          response_model=JobCreateResponse)
 async def create_legacy_job(payload: CreateJob = Body(...)):
-    """통합 작업 생성 - GPT 편집과 FaceFusion을 모두 수행"""
-    job = create_full_job(payload)
-    db_create_job(job)
+    """Integrated job - both GPT editing and FaceFusion"""
+    job_id = job_manager.create_job("both")
     
-    # 백그라운드에서 실행
-    run_in_background(
-        full_pipeline(job.id, payload, set_status, record_event)
+    # Convert face references to URLs
+    person_ids = []
+    for face in payload.faces:
+        if hasattr(face, 'url'):
+            person_ids.append(face.url)
+        elif isinstance(face, str):
+            person_ids.append(face)
+    
+    # Build processing options
+    processing_options = {
+        "type": "prompt",
+        "prompt": payload.prompt
+    }
+    
+    # Start full workflow
+    asyncio.create_task(
+        image_service.process_full_workflow(
+            job_id,
+            payload.input_image_url,
+            person_ids,
+            processing_options
+        )
     )
     
     return JobCreateResponse(
-        job_id=job.id,
+        job_id=job_id,
         mode="both",
         status="queued",
         message="Full pipeline job created successfully (GPT + FaceFusion)",
         links={
-            "self": f"/jobs/{job.id}",
-            "artifacts": f"/media/jobs/{job.id}/"
+            "self": f"/jobs/{job_id}",
+            "artifacts": f"/media/jobs/{job_id}/"
         }
     )
 
 
 @router.get("/{job_id}",
-         summary="작업 상태 조회",
-         description="작업 ID로 진행상황과 결과를 조회합니다.",
+         summary="Get job status",
+         description="Query job progress and results by job ID",
          response_model=JobResponse)
 def get_job_status(job_id: str):
-    """작업 상태 조회"""
-    job = db_get_job(job_id)
+    """Get job status"""
+    job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-    return get_job_response(job)
+    
+    # Build response
+    job_dir = Path("/home/catch/media/jobs") / job_id
+    
+    # Check for result files
+    artifacts = {}
+    if job_dir.exists():
+        gpt_result = job_dir / "gpt_result.jpg"
+        final_result = job_dir / "final_result.jpg"
+        
+        if final_result.exists():
+            artifacts["final"] = to_public_url(final_result)
+        elif gpt_result.exists():
+            artifacts["final"] = to_public_url(gpt_result)
+        
+        if gpt_result.exists():
+            artifacts["gpt"] = to_public_url(gpt_result)
+    
+    return JobResponse(
+        job_id=job_id,
+        status=job["status"],
+        mode=job.get("type", "both"),
+        progress=job.get("progress", 0),
+        steps=[],  # Simplified - no detailed steps
+        artifacts=artifacts,
+        meta={},
+        error=job.get("error"),
+        links={
+            "self": f"/jobs/{job_id}",
+            "artifacts": f"/media/jobs/{job_id}/"
+        }
+    )
+
+
+@router.get("/queue/status",
+         summary="Get queue status",
+         description="Get current queue statistics")
+def get_queue_status():
+    """Get queue status"""
+    return {
+        "jobs": job_manager.get_queue_status(),
+        "face_queue": {
+            "size": face_queue.get_queue_size(),
+            "current": face_queue.get_current_task()
+        }
+    }

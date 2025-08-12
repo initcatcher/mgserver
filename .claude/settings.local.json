@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(sudo systemctl:*)"
+      "Bash(sudo systemctl:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

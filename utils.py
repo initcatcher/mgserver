@@ -86,6 +86,16 @@ def progress_of_status(status: str) -> int:
         return 0
 
 
+def convert_url_to_path(url: str) -> str:
+    """Convert public URL to local path"""
+    source_url = "https://image.nearzoom.store/media/"
+    target_path = "/home/catch/media/"
+    
+    if url.startswith(source_url):
+        return url.replace(source_url, target_path)
+    return url
+
+
 def job_response_builder(job, job_dir_path: Path) -> dict:
     """작업 응답 생성 헬퍼"""
     input_png = job_dir_path/"input"/"input.png"
