@@ -9,7 +9,7 @@ import uuid
 import mimetypes
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -26,6 +26,8 @@ load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/home/catch/media"))
 JOBS_DIR = Path(os.getenv("JOBS_DIR", str(MEDIA_ROOT / "jobs")))
 UPLOAD_DIR = MEDIA_ROOT / "uploads"
+PROFILE_DIR = MEDIA_ROOT / "profile"
+GROUP_DIR = MEDIA_ROOT / "group"
 
 # 업로드 설정
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
@@ -71,6 +73,24 @@ def generate_unique_filename(original_filename: str) -> str:
     unique_id = str(uuid.uuid4())[:8]
     return f"{name_without_ext}_{timestamp}_{unique_id}{file_ext}"
 
+def get_upload_directory(upload_type: str = None) -> Path:
+    """업로드 타입에 따른 디렉토리 반환"""
+    if upload_type == "profile":
+        return PROFILE_DIR
+    elif upload_type == "group":
+        return GROUP_DIR
+    else:
+        return UPLOAD_DIR
+
+def get_file_url(upload_type: str, filename: str) -> str:
+    """업로드 타입에 따른 파일 URL 반환"""
+    if upload_type == "profile":
+        return f"https://image.nearzoom.store/media/profile/{filename}"
+    elif upload_type == "group":
+        return f"https://image.nearzoom.store/media/group/{filename}"
+    else:
+        return f"https://image.nearzoom.store/media/uploads/{filename}"
+
 # FastAPI 앱 생성
 app = FastAPI(
     title="AI 이미지 처리 서버 (리팩토링)",
@@ -111,6 +131,8 @@ async def startup_event():
     # Create directories
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    GROUP_DIR.mkdir(parents=True, exist_ok=True)
     
     # Start face queue worker
     await face_queue.start()
@@ -160,7 +182,7 @@ def health_check():
 
 
 @app.post("/upload", summary="파일 업로드")
-async def upload_photo(file: UploadFile = File(...)):
+async def upload_photo(file: UploadFile = File(...), type: str = Form(None)):
     """파일 업로드 엔드포인트"""
     try:
         if not file.filename:
@@ -181,12 +203,17 @@ async def upload_photo(file: UploadFile = File(...)):
             )
         
         unique_filename = generate_unique_filename(file.filename)
-        file_path = UPLOAD_DIR / unique_filename
+        upload_dir = get_upload_directory(type)
+        
+        # 업로드 디렉토리가 존재하지 않으면 생성
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        file_path = upload_dir / unique_filename
         
         with open(file_path, "wb") as buffer:
             buffer.write(content)
         
-        file_url = f"https://image.nearzoom.store/media/uploads/{unique_filename}"
+        file_url = get_file_url(type, unique_filename)
         file_size = len(content)
         
         logger.info(f"File uploaded: {file_path}")
@@ -202,7 +229,8 @@ async def upload_photo(file: UploadFile = File(...)):
                     "file_url": file_url,
                     "file_size": file_size,
                     "content_type": file.content_type,
-                    "upload_time": datetime.now().isoformat()
+                    "upload_time": datetime.now().isoformat(),
+                    "type": type or "uploads"
                 }
             }
         )
