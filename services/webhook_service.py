@@ -17,7 +17,16 @@ class WebhookService:
             "WEBHOOK_URL", 
             "https://api.nearzoom.store/webhooks/image/individual/completed"
         )
-        self.timeout = 10.0
+        
+        # URL 검증 및 디버깅
+        logger.info(f"Webhook URL loaded: '{self.webhook_url}'")
+        
+        if not self.webhook_url or not (self.webhook_url.startswith('http://') or self.webhook_url.startswith('https://')):
+            logger.warning(f"Invalid webhook URL: '{self.webhook_url}', using default")
+            self.webhook_url = "https://api.nearzoom.store/webhooks/image/individual/completed"
+            logger.info(f"Using default webhook URL: {self.webhook_url}")
+        
+        self.timeout = 15.0
         self.retry_count = 1
     
     async def send_completion_webhook(self, 
@@ -58,9 +67,14 @@ class WebhookService:
     
     async def _send_webhook(self, payload: Dict) -> bool:
         """Internal method to send webhook with retry logic"""
+        logger.info(f"Sending webhook to: {self.webhook_url}")
+        
         for attempt in range(self.retry_count + 1):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout,
+                    headers={"User-Agent": "MGServer-Webhook/1.0"}
+                ) as client:
                     response = await client.post(
                         self.webhook_url,
                         json=payload,
