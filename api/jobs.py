@@ -24,6 +24,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+async def handle_dummy_job(job_id: str, job_type: str = "both") -> None:
+    """더미 작업 처리: 30초 후 성공 상태로 업데이트"""
+    try:
+        logger.info(f"Starting dummy job {job_id} (type: {job_type})")
+        
+        # 30초 대기
+        await asyncio.sleep(30)
+        
+        # 작업 상태를 성공으로 업데이트
+        job_manager.update_job_status(job_id, "done")
+        job_manager.update_job_progress(job_id, 100)
+        
+        logger.info(f"Dummy job {job_id} completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Dummy job {job_id} failed: {str(e)}")
+        job_manager.update_job_status(job_id, "failed")
+        job_manager.update_job_error(job_id, f"Dummy job failed: {str(e)}")
+
+
 @router.post("", status_code=201,
          summary="Image processing job (new API)",
          description="Create image processing job based on Person IDs",
@@ -34,7 +54,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
          })
 async def create_new_job(payload: CreateImageJob = Body(...)):
     """New format image processing job"""
-    logger.info(f"Creating image job with person_ids: {payload.person_ids}")
+    logger.info(f"Creating image job with person_ids: {payload.person_ids}, type: {payload.type}")
     
     # Validation
     if not payload.person_ids:
@@ -76,15 +96,20 @@ async def create_new_job(payload: CreateImageJob = Body(...)):
     # Create job
     job_id = job_manager.create_job("full")
     
-    # Start processing
-    asyncio.create_task(
-        image_service.process_full_workflow(
-            job_id,
-            payload.image_url,
-            payload.person_ids,
-            payload.processing_options.dict()
+    # Check for dummy mode
+    if payload.type == "dummy":
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "full"))
+    else:
+        # Start normal processing
+        asyncio.create_task(
+            image_service.process_full_workflow(
+                job_id,
+                payload.image_url,
+                payload.person_ids,
+                payload.processing_options.dict()
+            )
         )
-    )
     
     # Return immediate response
     return ImageJobResponse(
@@ -104,14 +129,19 @@ async def create_gpt_only_job(payload: CreateGPTJob = Body(...)):
     """GPT editing only endpoint"""
     job_id = job_manager.create_job("gpt_only")
     
-    # Start GPT processing
-    asyncio.create_task(
-        image_service.process_gpt_only(
-            job_id,
-            payload.input_image_url,
-            payload.prompt
+    # Check for dummy mode
+    if payload.type == "dummy":
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "gpt_only"))
+    else:
+        # Start GPT processing
+        asyncio.create_task(
+            image_service.process_gpt_only(
+                job_id,
+                payload.input_image_url,
+                payload.prompt
+            )
         )
-    )
     
     return JobCreateResponse(
         job_id=job_id,
@@ -133,22 +163,27 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
     """FaceFusion face swap only endpoint"""
     job_id = job_manager.create_job("face_only")
     
-    # Prepare face URLs
-    face_urls = []
-    for face_ref in payload.faces:
-        if hasattr(face_ref, 'url'):
-            face_urls.append(face_ref.url)
-        elif isinstance(face_ref, str):
-            face_urls.append(face_ref)
-    
-    # Start face processing
-    asyncio.create_task(
-        image_service.process_face_only(
-            job_id,
-            payload.input_image_url,
-            face_urls
+    # Check for dummy mode
+    if payload.type == "dummy":
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "face_only"))
+    else:
+        # Prepare face URLs
+        face_urls = []
+        for face_ref in payload.faces:
+            if hasattr(face_ref, 'url'):
+                face_urls.append(face_ref.url)
+            elif isinstance(face_ref, str):
+                face_urls.append(face_ref)
+        
+        # Start face processing
+        asyncio.create_task(
+            image_service.process_face_only(
+                job_id,
+                payload.input_image_url,
+                face_urls
+            )
         )
-    )
     
     return JobCreateResponse(
         job_id=job_id,
@@ -170,29 +205,34 @@ async def create_legacy_job(payload: CreateJob = Body(...)):
     """Integrated job - both GPT editing and FaceFusion"""
     job_id = job_manager.create_job("both")
     
-    # Convert face references to URLs
-    person_ids = []
-    for face in payload.faces:
-        if hasattr(face, 'url'):
-            person_ids.append(face.url)
-        elif isinstance(face, str):
-            person_ids.append(face)
-    
-    # Build processing options
-    processing_options = {
-        "type": "prompt",
-        "prompt": payload.prompt
-    }
-    
-    # Start full workflow
-    asyncio.create_task(
-        image_service.process_full_workflow(
-            job_id,
-            payload.input_image_url,
-            person_ids,
-            processing_options
+    # Check for dummy mode
+    if payload.type == "dummy":
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "both"))
+    else:
+        # Convert face references to URLs
+        person_ids = []
+        for face in payload.faces:
+            if hasattr(face, 'url'):
+                person_ids.append(face.url)
+            elif isinstance(face, str):
+                person_ids.append(face)
+        
+        # Build processing options
+        processing_options = {
+            "type": "prompt",
+            "prompt": payload.prompt
+        }
+        
+        # Start full workflow
+        asyncio.create_task(
+            image_service.process_full_workflow(
+                job_id,
+                payload.input_image_url,
+                person_ids,
+                processing_options
+            )
         )
-    )
     
     return JobCreateResponse(
         job_id=job_id,

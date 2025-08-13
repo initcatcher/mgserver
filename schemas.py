@@ -19,6 +19,7 @@ class CreateJob(BaseModel):
     """통합 작업 생성 요청 (GPT + FaceFusion)"""
     input_image_url: str = Field(..., description="편집할 원본 이미지 URL")
     prompt: str = Field(..., description="이미지 편집을 위한 텍스트 프롬프트")
+    type: Optional[str] = Field(None, description="처리 타입: 'dummy'로 설정시 테스트 모드")
     faces: List[FaceRef] = Field(
         default_factory=list, 
         max_items=4, 
@@ -64,6 +65,7 @@ class CreateGPTJob(BaseModel):
     """GPT 전용 작업 생성 요청"""
     input_image_url: str = Field(..., description="편집할 원본 이미지 URL")
     prompt: str = Field(..., description="이미지 편집을 위한 텍스트 프롬프트")
+    type: Optional[str] = Field(None, description="처리 타입: 'dummy'로 설정시 테스트 모드")
     exif_strip: bool = Field(
         default=True, 
         description="EXIF 메타데이터 제거 여부"
@@ -89,6 +91,7 @@ class CreateGPTJob(BaseModel):
 class CreateFaceJob(BaseModel):
     """FaceFusion 전용 작업 생성 요청"""
     input_image_url: str = Field(..., description="편집할 원본 이미지 URL")
+    type: Optional[str] = Field(None, description="처리 타입: 'dummy'로 설정시 테스트 모드")
     faces: List[FaceRef] = Field(
         ..., 
         min_items=1,
@@ -185,6 +188,7 @@ class CreateImageJob(BaseModel):
     image_url: str = Field(..., description="처리할 이미지 URL")
     person_ids: List[str] = Field(..., min_items=1, description="단체사진에 포함된 유저 ID들")
     processing_options: ProcessingOptions = Field(..., description="처리 옵션")
+    type: Optional[str] = Field(None, description="처리 타입: 'dummy'로 설정시 테스트 모드")
 
 class ImageJobResponse(BaseModel):
     """이미지 작업 응답"""
