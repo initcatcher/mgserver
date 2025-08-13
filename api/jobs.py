@@ -96,12 +96,16 @@ async def create_new_job(payload: CreateImageJob = Body(...)):
     # Create job
     job_id = job_manager.create_job("full")
     
-    # Check for dummy mode
-    if payload.type == "dummy":
-        # Start dummy processing
-        asyncio.create_task(handle_dummy_job(job_id, "full"))
-    else:
-        # Start normal processing
+    # Set webhook parameters
+    webhook_params = {
+        "original_image_id": payload.image_url.split("/")[-1].split(".")[0],  # Extract filename without extension
+        "person_ids": payload.person_ids
+    }
+    job_manager.set_webhook_params(job_id, webhook_params)
+    
+    # Check for real mode
+    if payload.type == "real":
+        # Start real processing
         asyncio.create_task(
             image_service.process_full_workflow(
                 job_id,
@@ -110,6 +114,9 @@ async def create_new_job(payload: CreateImageJob = Body(...)):
                 payload.processing_options.dict()
             )
         )
+    else:
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "full"))
     
     # Return immediate response
     return ImageJobResponse(
@@ -129,12 +136,16 @@ async def create_gpt_only_job(payload: CreateGPTJob = Body(...)):
     """GPT editing only endpoint"""
     job_id = job_manager.create_job("gpt_only")
     
-    # Check for dummy mode
-    if payload.type == "dummy":
-        # Start dummy processing
-        asyncio.create_task(handle_dummy_job(job_id, "gpt_only"))
-    else:
-        # Start GPT processing
+    # Set webhook parameters
+    webhook_params = {
+        "original_image_id": payload.input_image_url.split("/")[-1].split(".")[0],
+        "person_ids": []
+    }
+    job_manager.set_webhook_params(job_id, webhook_params)
+    
+    # Check for real mode
+    if payload.type == "real":
+        # Start real GPT processing
         asyncio.create_task(
             image_service.process_gpt_only(
                 job_id,
@@ -142,6 +153,9 @@ async def create_gpt_only_job(payload: CreateGPTJob = Body(...)):
                 payload.prompt
             )
         )
+    else:
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "gpt_only"))
     
     return JobCreateResponse(
         job_id=job_id,
@@ -163,20 +177,24 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
     """FaceFusion face swap only endpoint"""
     job_id = job_manager.create_job("face_only")
     
-    # Check for dummy mode
-    if payload.type == "dummy":
-        # Start dummy processing
-        asyncio.create_task(handle_dummy_job(job_id, "face_only"))
-    else:
-        # Prepare face URLs
-        face_urls = []
-        for face_ref in payload.faces:
-            if hasattr(face_ref, 'url'):
-                face_urls.append(face_ref.url)
-            elif isinstance(face_ref, str):
-                face_urls.append(face_ref)
-        
-        # Start face processing
+    # Prepare face URLs
+    face_urls = []
+    for face_ref in payload.faces:
+        if hasattr(face_ref, 'url'):
+            face_urls.append(face_ref.url)
+        elif isinstance(face_ref, str):
+            face_urls.append(face_ref)
+    
+    # Set webhook parameters  
+    webhook_params = {
+        "original_image_id": payload.input_image_url.split("/")[-1].split(".")[0],
+        "person_ids": [url.split("/")[-1].split(".")[0] for url in face_urls]
+    }
+    job_manager.set_webhook_params(job_id, webhook_params)
+    
+    # Check for real mode
+    if payload.type == "real":
+        # Start real face processing
         asyncio.create_task(
             image_service.process_face_only(
                 job_id,
@@ -184,6 +202,9 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
                 face_urls
             )
         )
+    else:
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "face_only"))
     
     return JobCreateResponse(
         job_id=job_id,
@@ -205,26 +226,30 @@ async def create_legacy_job(payload: CreateJob = Body(...)):
     """Integrated job - both GPT editing and FaceFusion"""
     job_id = job_manager.create_job("both")
     
-    # Check for dummy mode
-    if payload.type == "dummy":
-        # Start dummy processing
-        asyncio.create_task(handle_dummy_job(job_id, "both"))
-    else:
-        # Convert face references to URLs
-        person_ids = []
-        for face in payload.faces:
-            if hasattr(face, 'url'):
-                person_ids.append(face.url)
-            elif isinstance(face, str):
-                person_ids.append(face)
-        
+    # Convert face references to URLs
+    person_ids = []
+    for face in payload.faces:
+        if hasattr(face, 'url'):
+            person_ids.append(face.url)
+        elif isinstance(face, str):
+            person_ids.append(face)
+    
+    # Set webhook parameters
+    webhook_params = {
+        "original_image_id": payload.input_image_url.split("/")[-1].split(".")[0],
+        "person_ids": [url.split("/")[-1].split(".")[0] for url in person_ids]
+    }
+    job_manager.set_webhook_params(job_id, webhook_params)
+    
+    # Check for real mode
+    if payload.type == "real":
         # Build processing options
         processing_options = {
             "type": "prompt",
             "prompt": payload.prompt
         }
         
-        # Start full workflow
+        # Start real full workflow
         asyncio.create_task(
             image_service.process_full_workflow(
                 job_id,
@@ -233,6 +258,9 @@ async def create_legacy_job(payload: CreateJob = Body(...)):
                 processing_options
             )
         )
+    else:
+        # Start dummy processing
+        asyncio.create_task(handle_dummy_job(job_id, "both"))
     
     return JobCreateResponse(
         job_id=job_id,

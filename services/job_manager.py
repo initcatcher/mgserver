@@ -3,6 +3,7 @@ Memory-based job state management
 """
 
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Dict, Optional, List
 from enum import Enum
@@ -17,6 +18,8 @@ class JobStatus(Enum):
 class JobManager:
     def __init__(self):
         self.jobs: Dict[str, dict] = {}
+        # Lazy import to avoid circular imports
+        self._webhook_service = None
     
     def create_job(self, job_type: str = "full") -> str:
         """Create new job and return job_id"""
@@ -31,13 +34,15 @@ class JobManager:
             "result_path": None,
             "error": None,
             "logs": [],
-            "progress": 0
+            "progress": 0,
+            "webhook_params": {}  # Store webhook-related data
         }
         return job_id
     
     def update_status(self, job_id: str, status: JobStatus, error: str = None):
         """Update job status"""
         if job_id in self.jobs:
+            old_status = self.jobs[job_id]["status"]
             self.jobs[job_id]["status"] = status.value
             self.jobs[job_id]["updated_at"] = datetime.now()
             if error:
@@ -52,6 +57,10 @@ class JobManager:
                 JobStatus.FAILED: -1
             }
             self.jobs[job_id]["progress"] = progress_map.get(status, 0)
+            
+            # Send webhook for completion or failure
+            if status in [JobStatus.COMPLETED, JobStatus.FAILED] and old_status != status.value:
+                asyncio.create_task(self._send_webhook(job_id, status, error))
     
     def add_log(self, job_id: str, message: str):
         """Add log entry for job"""
@@ -97,6 +106,82 @@ class JobManager:
         for job_id in to_remove:
             del self.jobs[job_id]
         return len(to_remove)
+    
+    def set_webhook_params(self, job_id: str, params: dict):
+        """Set webhook parameters for job"""
+        if job_id in self.jobs:
+            self.jobs[job_id]["webhook_params"] = params
+    
+    def update_job_status(self, job_id: str, status: str):
+        """Update job status (string version for backward compatibility)"""
+        status_map = {
+            "done": JobStatus.COMPLETED,
+            "failed": JobStatus.FAILED,
+            "queued": JobStatus.QUEUED
+        }
+        if status in status_map:
+            self.update_status(job_id, status_map[status])
+    
+    def update_job_progress(self, job_id: str, progress: int):
+        """Update job progress"""
+        if job_id in self.jobs:
+            self.jobs[job_id]["progress"] = progress
+            self.jobs[job_id]["updated_at"] = datetime.now()
+    
+    def update_job_error(self, job_id: str, error: str):
+        """Update job error"""
+        if job_id in self.jobs:
+            self.jobs[job_id]["error"] = error
+            self.jobs[job_id]["updated_at"] = datetime.now()
+    
+    async def _send_webhook(self, job_id: str, status: JobStatus, error: str = None):
+        """Send webhook notification"""
+        try:
+            # Lazy import to avoid circular imports
+            if self._webhook_service is None:
+                from services.webhook_service import webhook_service
+                self._webhook_service = webhook_service
+            
+            job = self.jobs.get(job_id)
+            if not job:
+                return
+            
+            webhook_params = job.get("webhook_params", {})
+            
+            if status == JobStatus.COMPLETED:
+                # Extract data for success webhook
+                result_path = job.get("result_path")
+                if result_path:
+                    # Convert local path to public URL
+                    processed_url = result_path.replace("/home/catch/media", "https://image.nearzoom.store/media")
+                else:
+                    # Fallback URL for dummy jobs
+                    processed_url = f"https://image.nearzoom.store/media/jobs/{job_id}/final_result.jpg"
+                
+                original_image_id = webhook_params.get("original_image_id", "unknown")
+                person_ids = webhook_params.get("person_ids", [])
+                
+                await self._webhook_service.send_completion_webhook(
+                    job_id=job_id,
+                    original_image_id=original_image_id,
+                    processed_image_url=processed_url,
+                    person_ids=person_ids
+                )
+            
+            elif status == JobStatus.FAILED:
+                original_image_id = webhook_params.get("original_image_id", "unknown")
+                error_message = error or job.get("error", "Unknown error")
+                
+                await self._webhook_service.send_failure_webhook(
+                    job_id=job_id,
+                    error_message=error_message,
+                    original_image_id=original_image_id
+                )
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Webhook sending failed for job {job_id}: {str(e)}")
 
 # Singleton instance
 job_manager = JobManager()

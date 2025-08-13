@@ -29,6 +29,9 @@ UPLOAD_DIR = MEDIA_ROOT / "uploads"
 PROFILE_DIR = MEDIA_ROOT / "profile"
 GROUP_DIR = MEDIA_ROOT / "group"
 
+# Webhook 설정
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://api.nearzoom.store/webhooks/image/individual/completed")
+
 # 업로드 설정
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
