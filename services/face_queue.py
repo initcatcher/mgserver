@@ -80,19 +80,22 @@ class FaceFusionQueue:
             # Ensure output directory exists
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             
+            # Get target image extension for consistent output format
+            target_ext = Path(target_image).suffix
+            
             current_target = target_image
             
             # Process each face sequentially
             for i, source_face in enumerate(source_faces):
                 logger.info(f"Job {job_id}: Processing face {i+1}/{len(source_faces)}")
                 
-                # Determine output path
+                # Determine output path with matching extension
                 if i == len(source_faces) - 1:
                     # Final output
-                    output_path = str(Path(output_dir) / "final_result.jpg")
+                    output_path = str(Path(output_dir) / f"final_result{target_ext}")
                 else:
                     # Intermediate step
-                    output_path = str(Path(output_dir) / f"temp_step_{i+1}.jpg")
+                    output_path = str(Path(output_dir) / f"temp_step_{i+1}{target_ext}")
                 
                 # Run FaceFusion for this face
                 success, result = await self._run_single_face_swap(
