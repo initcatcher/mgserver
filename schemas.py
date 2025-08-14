@@ -92,29 +92,15 @@ class CreateFaceJob(BaseModel):
     """FaceFusion 전용 작업 생성 요청"""
     input_image_url: str = Field(..., description="편집할 원본 이미지 URL")
     type: Optional[str] = Field(None, description="처리 타입: 'dummy'로 설정시 테스트 모드")
-    faces: List[FaceRef] = Field(
+    person_ids: List[str] = Field(
         ..., 
         min_items=1,
         max_items=4, 
-        description="얼굴 교체에 사용할 얼굴 이미지들 (1-4개)"
-    )
-    mapping: Union[str, List[int]] = Field(
-        default="similarity", 
-        description="얼굴 매핑 방식: 'similarity'(유사도), 'left_to_right'(좌→우), 또는 인덱스 배열"
-    )
-    top1_only: bool = Field(
-        default=False, 
-        description="가장 유사한 얼굴만 교체할지 여부"
+        description="얼굴 교체에 사용할 이미지 URL들 (1-4개, left-to-right 순서)"
     )
     exif_strip: bool = Field(
         default=True, 
         description="EXIF 메타데이터 제거 여부"
-    )
-    threshold: float = Field(
-        default=0.35, 
-        description="얼굴 유사도 임계값 (0.0-1.0)",
-        ge=0.0,
-        le=1.0
     )
 
 

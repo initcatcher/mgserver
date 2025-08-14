@@ -177,18 +177,10 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
     """FaceFusion face swap only endpoint"""
     job_id = job_manager.create_job("face_only")
     
-    # Prepare face URLs
-    face_urls = []
-    for face_ref in payload.faces:
-        if hasattr(face_ref, 'url'):
-            face_urls.append(face_ref.url)
-        elif isinstance(face_ref, str):
-            face_urls.append(face_ref)
-    
     # Set webhook parameters  
     webhook_params = {
         "original_image_id": payload.input_image_url.split("/")[-1].split(".")[0],
-        "person_ids": [url.split("/")[-1].split(".")[0] for url in face_urls]
+        "person_ids": [url.split("/")[-1].split(".")[0] for url in payload.person_ids]
     }
     job_manager.set_webhook_params(job_id, webhook_params)
     
@@ -199,7 +191,7 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
             image_service.process_face_only(
                 job_id,
                 payload.input_image_url,
-                face_urls
+                payload.person_ids
             )
         )
     else:

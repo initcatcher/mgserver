@@ -132,7 +132,7 @@ class ImageService:
     async def process_face_only(self,
                                job_id: str,
                                target_url: str,
-                               source_urls: List[str]):
+                               person_ids: List[str]):
         """Face-only processing"""
         try:
             job_dir = self.jobs_dir / job_id
@@ -141,7 +141,26 @@ class ImageService:
             job_manager.update_status(job_id, JobStatus.FACE_PROCESSING)
             
             target_path = convert_url_to_path(target_url)
-            source_paths = [convert_url_to_path(url) for url in source_urls]
+            
+            # Convert person URLs to paths and filter out empty strings
+            source_paths = []
+            for person_url in person_ids:
+                if not person_url or person_url.strip() == "":
+                    logger.warning(f"Skipping empty person_id")
+                    continue
+                    
+                person_path = convert_url_to_path(person_url)
+                if not Path(person_path).exists():
+                    logger.warning(f"Person image not found: {person_path}")
+                    continue
+                source_paths.append(person_path)
+            
+            if not source_paths:
+                # No valid faces to swap, mark as completed with original image
+                job_manager.set_result(job_id, target_path)
+                job_manager.update_status(job_id, JobStatus.COMPLETED)
+                job_manager.add_log(job_id, "Completed (no valid faces to swap)")
+                return
             
             face_job = {
                 'job_id': job_id,
