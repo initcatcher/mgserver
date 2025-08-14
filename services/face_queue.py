@@ -86,8 +86,11 @@ class FaceFusionQueue:
             current_target = target_image
             
             # Process each face sequentially
-            for i, source_face in enumerate(source_faces):
-                logger.info(f"Job {job_id}: Processing face {i+1}/{len(source_faces)}")
+            for i, source_face_data in enumerate(source_faces):
+                # Extract original position and face path
+                original_position, source_face_path = source_face_data
+                
+                logger.info(f"Job {job_id}: Processing face {i+1}/{len(source_faces)} at position {original_position}")
                 
                 # Determine output path with matching extension
                 if i == len(source_faces) - 1:
@@ -97,9 +100,9 @@ class FaceFusionQueue:
                     # Intermediate step
                     output_path = str(Path(output_dir) / f"temp_step_{i+1}{target_ext}")
                 
-                # Run FaceFusion for this face
+                # Run FaceFusion for this face with original position
                 success, result = await self._run_single_face_swap(
-                    source_face, current_target, output_path, i
+                    source_face_path, current_target, output_path, original_position
                 )
                 
                 if not success:

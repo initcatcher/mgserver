@@ -64,14 +64,18 @@ class ImageService:
             
             job_manager.add_log(job_id, f"GPT generation completed: {gpt_output_path}")
             
-            # Convert person URLs to paths
+            # Convert person URLs to paths and preserve original indices
             person_paths = []
-            for person_url in person_ids:
+            for i, person_url in enumerate(person_ids):
+                if not person_url or person_url.strip() == "":
+                    logger.warning(f"Skipping empty person_id at position {i}")
+                    continue
+                    
                 person_path = convert_url_to_path(person_url)
                 if not Path(person_path).exists():
                     logger.warning(f"Person image not found: {person_path}")
                     continue
-                person_paths.append(person_path)
+                person_paths.append((i, person_path))
             
             if person_paths:
                 # Update status to face processing
@@ -142,18 +146,18 @@ class ImageService:
             
             target_path = convert_url_to_path(target_url)
             
-            # Convert person URLs to paths and filter out empty strings
+            # Convert person URLs to paths and preserve original indices
             source_paths = []
-            for person_url in person_ids:
+            for i, person_url in enumerate(person_ids):
                 if not person_url or person_url.strip() == "":
-                    logger.warning(f"Skipping empty person_id")
+                    logger.warning(f"Skipping empty person_id at position {i}")
                     continue
                     
                 person_path = convert_url_to_path(person_url)
                 if not Path(person_path).exists():
                     logger.warning(f"Person image not found: {person_path}")
                     continue
-                source_paths.append(person_path)
+                source_paths.append((i, person_path))
             
             if not source_paths:
                 # No valid faces to swap, mark as completed with original image
