@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 # Local module imports
 from api.jobs import router as jobs_router
+from api.frame import router as frame_router
 from schemas import HealthResponse
 from services.face_queue import face_queue
 
@@ -159,6 +160,7 @@ async def shutdown_event():
 
 # 라우터 등록
 app.include_router(jobs_router)
+app.include_router(frame_router)
 
 
 # 기본 엔드포인트

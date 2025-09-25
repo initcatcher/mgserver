@@ -112,6 +112,12 @@ class JobManager:
         if job_id in self.jobs:
             self.jobs[job_id]["webhook_params"] = params
     
+    def get_webhook_params(self, job_id: str) -> dict:
+        """Get webhook parameters for job"""
+        if job_id in self.jobs:
+            return self.jobs[job_id].get("webhook_params", {})
+        return {}
+    
     def update_job_status(self, job_id: str, status: str):
         """Update job status (string version for backward compatibility)"""
         status_map = {
@@ -119,7 +125,13 @@ class JobManager:
             "failed": JobStatus.FAILED,
             "queued": JobStatus.QUEUED
         }
-        if status in status_map:
+        # Don't trigger automatic webhook for frame jobs
+        if job_id in self.jobs and self.jobs[job_id].get("type") == "frame":
+            # Only update status without triggering webhook
+            if job_id in self.jobs:
+                self.jobs[job_id]["status"] = status
+                self.jobs[job_id]["updated_at"] = datetime.now()
+        elif status in status_map:
             self.update_status(job_id, status_map[status])
     
     def update_job_progress(self, job_id: str, progress: int):

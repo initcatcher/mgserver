@@ -51,8 +51,11 @@ class GPTProcessor:
                             mask_path: Optional[str] = None) -> Tuple[bool, str]:
         """Synchronous GPT image generation"""
         try:
+
+            additional_prompt = "Preserve the original pixels of the subjects face, skin, eyes, hair, contours, and expression exactly as they are — no retouching. Do not Generate Any other people. Naturally generate the clothing and body, filling in any missing parts, ensuring the overall look is photogenic, pretty, and beautiful."
+
             # Add preservation instruction to prompt
-            enhanced_prompt = prompt + " Preserve the original pixels of the subjects face, skin, eyes, hair, contours, and expression exactly as they are — no retouching. Naturally generate the clothing and body, filling in any missing parts."
+            enhanced_prompt = prompt + additional_prompt
             
             # Prepare API call parameters
             kwargs = dict(

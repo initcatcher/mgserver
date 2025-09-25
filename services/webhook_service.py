@@ -65,9 +65,36 @@ class WebhookService:
         
         return await self._send_webhook(payload)
     
+    async def send_frame_completion_webhook(self,
+                                         job_id: str,
+                                         original_image_id: str,
+                                         finalImageUrl: str,
+                                         person_ids: List[str]) -> bool:
+        """Send webhook for frame job completion"""
+        # Use specific URL for frame webhooks
+        frame_webhook_url = "https://api.nearzoom.store/webhooks/frame/completed"
+        
+        payload = {
+            "event": "image_processing_completed",
+            "jobId": job_id,
+            "timestamp": datetime.now().isoformat() + "Z",
+            "data": {
+                "originalImageId": original_image_id,
+                "finalImageUrl": finalImageUrl,
+                "personIds": person_ids
+            }
+        }
+        
+        # Send to frame-specific webhook URL
+        return await self._send_webhook_to_url(payload, frame_webhook_url)
+    
     async def _send_webhook(self, payload: Dict) -> bool:
         """Internal method to send webhook with retry logic"""
-        logger.info(f"Sending webhook to: {self.webhook_url}")
+        return await self._send_webhook_to_url(payload, self.webhook_url)
+    
+    async def _send_webhook_to_url(self, payload: Dict, webhook_url: str) -> bool:
+        """Internal method to send webhook to specific URL with retry logic"""
+        logger.info(f"Sending webhook to: {webhook_url}")
         
         for attempt in range(self.retry_count + 1):
             try:
@@ -76,7 +103,7 @@ class WebhookService:
                     headers={"User-Agent": "MGServer-Webhook/1.0"}
                 ) as client:
                     response = await client.post(
-                        self.webhook_url,
+                        webhook_url,
                         json=payload,
                         headers={"Content-Type": "application/json"}
                     )

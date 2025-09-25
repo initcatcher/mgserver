@@ -2,6 +2,7 @@
 Job API endpoints
 """
 
+import os
 import asyncio
 import logging
 from datetime import datetime
@@ -22,6 +23,9 @@ from utils import to_public_url
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+# Check if JOB_ACCESS environment variable is set to true
+JOB_ACCESS_ENABLED = os.getenv("JOB_ACCESS", "false").lower() == "true"
 
 
 async def handle_dummy_job(job_id: str, job_type: str = "both") -> None:
@@ -103,8 +107,8 @@ async def create_new_job(payload: CreateImageJob = Body(...)):
     }
     job_manager.set_webhook_params(job_id, webhook_params)
     
-    # Check for real mode
-    if payload.type == "real":
+    # Check for real mode (JOB_ACCESS override or explicit real type)
+    if JOB_ACCESS_ENABLED or payload.type == "real":
         # Start real processing
         asyncio.create_task(
             image_service.process_full_workflow(
@@ -143,8 +147,8 @@ async def create_gpt_only_job(payload: CreateGPTJob = Body(...)):
     }
     job_manager.set_webhook_params(job_id, webhook_params)
     
-    # Check for real mode
-    if payload.type == "real":
+    # Check for real mode (JOB_ACCESS override or explicit real type)
+    if JOB_ACCESS_ENABLED or payload.type == "real":
         # Start real GPT processing
         asyncio.create_task(
             image_service.process_gpt_only(
@@ -184,8 +188,8 @@ async def create_face_only_job(payload: CreateFaceJob = Body(...)):
     }
     job_manager.set_webhook_params(job_id, webhook_params)
     
-    # Check for real mode
-    if payload.type == "real":
+    # Check for real mode (JOB_ACCESS override or explicit real type)
+    if JOB_ACCESS_ENABLED or payload.type == "real":
         # Start real face processing
         asyncio.create_task(
             image_service.process_face_only(
@@ -233,8 +237,8 @@ async def create_legacy_job(payload: CreateJob = Body(...)):
     }
     job_manager.set_webhook_params(job_id, webhook_params)
     
-    # Check for real mode
-    if payload.type == "real":
+    # Check for real mode (JOB_ACCESS override or explicit real type)
+    if JOB_ACCESS_ENABLED or payload.type == "real":
         # Build processing options
         processing_options = {
             "type": "prompt",

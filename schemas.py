@@ -190,8 +190,19 @@ class ErrorResponse(BaseModel):
     """에러 응답"""
     error: ErrorDetail = Field(..., description="에러 정보")
 
+# ---------- Frame API Schemas ----------
+
+class CreateFrameJob(BaseModel):
+    """Frame processing job request"""
+    image_urls: List[str] = Field(..., min_items=1, description="List of image URLs to process")
+    frameColor: str = Field(..., description="Frame color in hex format (e.g., #FFFFFF)")
+
+class FrameJobResponse(BaseModel):
+    """Frame job response"""
+    data: dict = Field(..., description="Response data containing job_id, status, and created_at")
+
 # ---------- Type Definitions ----------
 
 JobStatus = Literal["queued", "editing", "edited", "faceswap", "finalizing", "done", "failed"]
-JobMode = Literal["gpt_only", "face_only", "both"]
+JobMode = Literal["gpt_only", "face_only", "both", "frame"]
 ProcessingType = Literal["color", "prompt"]
